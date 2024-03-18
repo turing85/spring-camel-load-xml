@@ -1,0 +1,154 @@
+= Sprig Camel Load XML
+
+Demo project to demonstrate how route definitions from an XML file at runtime.
+
+== Core concept
+
+Since we need to load the route definition from an XML file, we need `org.apache.camel.springboot:camel-xml-io-dsl-starter` to load and transform the XML definition to a route resource.
+
+We define a route in link:src/main/resources/echoRoute.xml[`echoRoute.xml`]:
+
+.`echoRoute.xml`
+[source,xml]
+----
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://camel.apache.org/schema/spring"
+        xsi:schemaLocation="
+            http://camel.apache.org/schema/spring
+            http://camel.apache.org/schema/spring/camel-spring.xsd">
+    <route id="echo">
+        <from uri="platform-http:/hello?httpMethodRestrict=GET"/>
+        <log message="called"/>
+        <setBody>
+            <constant>Hello, Camel!</constant>
+        </setBody>
+        <setHeader name="Content-Type">
+            <constant>text/plain</constant>
+        </setHeader>
+    </route>
+</routes>
+----
+
+We load this route in link:src/main/java/de/turing85/spring/camel/load/xml/XmlLoader.java[`XmlLoader.java`]:
+
+.`XmlLoader.java`
+[source,java]
+----
+package de.turing85.spring.camel.load.xml;
+
+import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Optional;
+
+import lombok.RequiredArgsConstructor;
+import org.apache.camel.CamelContext;
+import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.spi.Resource;
+import org.apache.camel.spi.RoutesLoader;
+import org.apache.camel.support.ResourceHelper;
+import org.springframework.stereotype.Component;
+
+@Component
+@RequiredArgsConstructor
+public class XmlLoader extends RouteBuilder {
+  private final CamelContext context;
+
+  @Override
+  public void configure() throws Exception {
+    String fileName = "echoRoute.xml";
+    // @formatter:off
+    URI echoRouteUrl = Optional.of(getClass())
+        .map(Class::getClassLoader)
+        .map(loader -> loader.getResource(fileName))
+        .orElseThrow()
+        .toURI();
+    // @formatter:on
+    Path echoRoutePath = Path.of(echoRouteUrl);
+    Resource routeResource = ResourceHelper.fromBytes(fileName, Files.readAllBytes(echoRoutePath));
+    // @formatter:off
+    context
+        .getCamelContextExtension()
+        .getContextPlugin(RoutesLoader.class)
+        .loadRoutes(routeResource);
+    // @formatter:on
+  }
+}
+
+----
+
+Finally, we assert that the implementation works through the `@SpringBootTest` link:src/test/java/de/turing85/spring/camel/load/xml/XmlLoaderTest.java[`XmlLoaderTest.java`:
+
+.`XmlLoaderTest.java`
+[source,java]
+----
+package de.turing85.spring.camel.load.xml;
+
+import io.restassured.RestAssured;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpStatus;
+
+import static org.hamcrest.Matchers.is;
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class XmlLoaderTest {
+  @BeforeAll
+  static void setup(@LocalServerPort int port) {
+    RestAssured.baseURI = "http://localhost";
+    RestAssured.port = port;
+  }
+
+  @AfterAll
+  static void tearDown() {
+    RestAssured.baseURI = "";
+    RestAssured.port = 0;
+  }
+
+  @Test
+  void testGet() {
+    // @formatter:off
+    RestAssured
+        .when().get("/hello")
+        .then()
+            .statusCode(is(HttpStatus.OK.value()))
+            .body(is("Hello, Camel!"));
+    // @formatter:on
+  }
+}
+
+----
+
+== Build and test
+We can build and test the application by running
+
+.Build and test throug `mvnw`
+[source,bash]
+----
+$ ./mvnw clean package
+----
+
+== Contributors ✨
+
+Thanks goes to these wonderful people (https://allcontributors.org/docs/en/emoji-key[emoji key]):
+
+++++
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://turing85.github.io"><img src="https://avatars.githubusercontent.com/u/32584495?v=4?s=100" width="100px;" alt="Marco Bungart"/><br /><sub><b>Marco Bungart</b></sub></a><br /><a href="#code-turing85" title="Code">💻</a> <a href="#maintenance-turing85" title="Maintenance">🚧</a> <a href="#doc-turing85" title="Documentation">📖</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+++++
